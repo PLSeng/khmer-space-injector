@@ -86,13 +86,14 @@ def save_model(model, path: str) -> None:
     print(f"Model saved to {path}")
 
 
-def load_model(model, path: str) -> None:
+def load_model(model, path: str, device: str = 'cpu') -> None:
     """
     Load model from disk
     
     Args:
         model: PyTorch model instance
         path: Path to load the model from
+        device: Device to load the model on ('cpu' or 'cuda')
     """
-    model.load_state_dict(torch.load(path))
+    model.load_state_dict(torch.load(path, map_location=device))
     print(f"Model loaded from {path}")

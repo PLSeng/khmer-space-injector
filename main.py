@@ -31,6 +31,11 @@ def train(args):
     print("Loading data...")
     texts, labels = load_data(args.data_path)
     
+    if not texts:
+        print(f"Error: No data loaded from {args.data_path}")
+        print("Please provide training data in the expected format.")
+        return
+    
     # Build vocabulary
     print("Building vocabulary...")
     char_to_index, index_to_char = build_vocab(texts)
@@ -166,8 +171,8 @@ def main():
                         help='Number of RNN layers')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='Dropout probability')
-    parser.add_argument('--bidirectional', action='store_true', default=True,
-                        help='Use bidirectional RNN')
+    parser.add_argument('--bidirectional', action='store_false', default=True,
+                        help='Disable bidirectional RNN (enabled by default)')
     
     # Training
     parser.add_argument('--batch-size', type=int, default=32,

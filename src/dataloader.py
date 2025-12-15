@@ -116,6 +116,9 @@ def load_data(file_path: str) -> Tuple[List[str], List[List[int]]]:
     """
     Load data from file
     
+    Expected file format: Each line should contain text and space-separated labels
+    Example: "text_string\t0 1 0 1 0"
+    
     Args:
         file_path: Path to data file
         
@@ -125,7 +128,20 @@ def load_data(file_path: str) -> Tuple[List[str], List[List[int]]]:
     texts = []
     labels = []
     
-    # TODO: Implement data loading logic based on your file format
-    # This is a placeholder implementation
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or '\t' not in line:
+                    continue
+                
+                text, label_str = line.split('\t', 1)
+                label = [int(x) for x in label_str.split()]
+                
+                texts.append(text)
+                labels.append(label)
+    except FileNotFoundError:
+        print(f"Warning: Data file not found at {file_path}")
+        print("Returning empty dataset. Please provide training data.")
     
     return texts, labels
