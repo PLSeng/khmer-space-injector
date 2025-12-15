@@ -130,18 +130,26 @@ def load_data(file_path: str) -> Tuple[List[str], List[List[int]]]:
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line or '\t' not in line:
                     continue
                 
-                text, label_str = line.split('\t', 1)
-                label = [int(x) for x in label_str.split()]
-                
-                texts.append(text)
-                labels.append(label)
+                try:
+                    text, label_str = line.split('\t', 1)
+                    label = [int(x) for x in label_str.split()]
+                    
+                    texts.append(text)
+                    labels.append(label)
+                except ValueError as e:
+                    print(f"Warning: Skipping line {line_num} due to format error: {e}")
+                    continue
+                    
     except FileNotFoundError:
         print(f"Warning: Data file not found at {file_path}")
         print("Returning empty dataset. Please provide training data.")
+    except Exception as e:
+        print(f"Error loading data from {file_path}: {e}")
+        print("Returning empty dataset.")
     
     return texts, labels
