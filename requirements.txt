@@ -1,15 +1,17 @@
-# Core dependencies for RNN development
-torch>=2.0.0
-numpy>=1.24.0
+# PyTorch with CUDA support
+# Install with: pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+torch
+torchvision
 
-# Data processing
-scikit-learn>=1.3.0
+# Core dependencies
+numpy
+scikit-learn
 
 # Development tools
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
+pytest
+black
+flake8
 
-# Optional: for visualization and logging
-matplotlib>=3.7.0
-tensorboard>=2.13.0
+# Visualization and logging
+matplotlib
+tensorboard

@@ -2,10 +2,6 @@
 Utility functions for Khmer space injection RNN model
 """
 
-import numpy as np
-import torch
-from typing import List, Tuple, Optional
-
 
 def set_seed(seed: int = 42) -> None:
     """
@@ -14,10 +10,7 @@ def set_seed(seed: int = 42) -> None:
     Args:
         seed: Random seed value
     """
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    pass
 
 
 def char_to_idx(char: str, char_to_index: dict) -> int:
@@ -31,7 +24,7 @@ def char_to_idx(char: str, char_to_index: dict) -> int:
     Returns:
         Index of the character
     """
-    return char_to_index.get(char, char_to_index.get('<UNK>', 0))
+    pass
 
 
 def idx_to_char(idx: int, index_to_char: dict) -> str:
@@ -45,10 +38,10 @@ def idx_to_char(idx: int, index_to_char: dict) -> str:
     Returns:
         Character at the index
     """
-    return index_to_char.get(idx, '<UNK>')
+    pass
 
 
-def build_vocab(texts: List[str]) -> Tuple[dict, dict]:
+def build_vocab(texts):
     """
     Build vocabulary from texts
     
@@ -58,20 +51,7 @@ def build_vocab(texts: List[str]) -> Tuple[dict, dict]:
     Returns:
         Tuple of (char_to_index, index_to_char) dictionaries
     """
-    chars = set()
-    for text in texts:
-        chars.update(text)
-    
-    # Sort for consistency
-    chars = sorted(list(chars))
-    
-    # Add special tokens
-    chars = ['<PAD>', '<UNK>'] + chars
-    
-    char_to_index = {char: idx for idx, char in enumerate(chars)}
-    index_to_char = {idx: char for idx, char in enumerate(chars)}
-    
-    return char_to_index, index_to_char
+    pass
 
 
 def save_model(model, path: str) -> None:
@@ -82,8 +62,7 @@ def save_model(model, path: str) -> None:
         model: PyTorch model to save
         path: Path to save the model
     """
-    torch.save(model.state_dict(), path)
-    print(f"Model saved to {path}")
+    pass
 
 
 def load_model(model, path: str, device: str = 'cpu') -> None:
@@ -95,5 +74,4 @@ def load_model(model, path: str, device: str = 'cpu') -> None:
         path: Path to load the model from
         device: Device to load the model on ('cpu' or 'cuda')
     """
-    model.load_state_dict(torch.load(path, map_location=device))
-    print(f"Model loaded from {path}")
+    pass
