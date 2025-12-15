@@ -20,7 +20,7 @@ install:
 # Install PyTorch with CUDA support
 install-torch:
 	pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-	pip install numpy scikit-learn pytest black flake8 matplotlib tensorboard
+	pip install numpy scikit-learn pytest black flake8 matplotlib wandb
 
 # Train the model
 train:
