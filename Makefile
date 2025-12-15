@@ -13,14 +13,14 @@ help:
 
 # Create conda environment and install dependencies
 install:
-	conda create -n khmer-space-injector python=3.10 -y
+	conda create -n khmer-space-injector python=3.11 -y
 	@echo "Conda environment created. Activate it with: conda activate khmer-space-injector"
 	@echo "Then run: make install-torch"
 
 # Install PyTorch with CUDA support
-install-torch:
+install-dependencies:
 	pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-	pip install numpy scikit-learn pytest black flake8 matplotlib wandb
+	pip install -r requirements.txt
 
 # Train the model
 train:

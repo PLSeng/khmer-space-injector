@@ -1,7 +1,7 @@
 # PyTorch with CUDA support
 # Install with: pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-torch==2.6.0
-torchvision==0.21.0
+# torch==2.6.0
+# torchvision==0.21.0
 
 # Core dependencies
 numpy==2.3.5

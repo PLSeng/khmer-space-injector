@@ -8,6 +8,7 @@ class KhmerDataset:
     Dataset for Khmer text with space injection labels
     """
     
+    
     def __init__(self, texts, labels=None, char_to_index=None, max_length=128):
         """
         Initialize dataset
