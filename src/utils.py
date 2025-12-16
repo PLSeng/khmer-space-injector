@@ -1,6 +1,9 @@
 """
 Utility functions for Khmer space injection RNN model
 """
+import random
+import numpy as np
+import torch
 
 # TODO: HengHeng
 def set_seed(seed: int = 42) -> None:
@@ -10,7 +13,15 @@ def set_seed(seed: int = 42) -> None:
     Args:
         seed: Random seed value
     """
-    pass
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # Ensure deterministic behavior (may reduce performance slightly)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 
 
 # TODO: Lyhourt
@@ -53,7 +64,18 @@ def build_vocab(texts):
     Returns:
         Tuple of (char_to_index, index_to_char) dictionaries
     """
-    pass
+    # Collect unique characters
+    chars = set()
+    for text in texts:
+        chars.update(text)
+
+    # Sort characters for consistent indexing
+    chars = sorted(chars)
+
+    char_to_index = {char: idx for idx, char in enumerate(chars)}
+    index_to_char = {idx: char for char, idx in char_to_index.items()}
+
+    return char_to_index, index_to_char
 
 
 # TODO: SOL Visal
