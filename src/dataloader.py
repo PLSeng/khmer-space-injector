@@ -1,220 +1,216 @@
 """
 Data loading and preprocessing for Khmer space injection
 """
+
 import os
 import glob
+from typing import List, Tuple, Optional, Dict
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
-from collections import defaultdict
+
+from src.utils import build_vocab, char_to_idx
 
 
+# ======================================================
+# CONFIGURATION (change here if dataset location changes)
+# ======================================================
+DEFAULT_DATA_DIR = "data"   # e.g. "data", "/mnt/datasets/khmer", "../data"
+
+
+# ======================================================
+# Dataset
+# ======================================================
 class KhmerDataset(Dataset):
     """
     Dataset for Khmer text with space injection labels
     """
-    
-    
-    def __init__(self, texts, labels=None, char_to_index=None, max_length=128):
-        """
-        Initialize dataset
-        
-        Args:
-            texts: List of input texts
-            labels: List of label sequences (1 for space, 0 for no space)
-            char_to_index: Dictionary mapping characters to indices
-            max_length: Maximum sequence length
-        """
+
+    def __init__(
+        self,
+        texts: List[str],
+        labels: Optional[List[List[int]]] = None,
+        char_to_index: Optional[Dict[str, int]] = None,
+        max_length: int = 128,
+    ):
         self.texts = texts
         self.labels = labels
         self.max_length = max_length
-        # Build vocabulary if not provided
+
         if char_to_index is None:
-            char_set = set()
-            for text in texts:
-                char_set.update(text)
-            char_to_index = {char: idx + 2 for idx, char in enumerate(sorted(char_set))}
-            char_to_index['<PAD>'] = 0
-            char_to_index['<UNK>'] = 1
+            char_to_index, _ = build_vocab(texts)
+
         self.char_to_index = char_to_index
-        self.index_to_char = {idx: char for char, idx in char_to_index.items()}
-        
-    def __len__(self):
-        """
-        Get dataset length
-        
-        Returns:
-            Length of the dataset
-        """
+
+    def __len__(self) -> int:
         return len(self.texts)
-    
+
     def __getitem__(self, idx: int):
-        """
-        Get item at index
-        
-        Args:
-            idx: Index
-            
-        Returns:
-            Tuple of (input_tensor, label_tensor)
-        """
         text = self.texts[idx]
-        
-        # Convert characters to indices
-        input_ids = [self.char_to_index.get(c, self.char_to_index['<UNK>']) for c in text]
-        
+
+        input_ids = [char_to_idx(c, self.char_to_index) for c in text]
+
+        label_seq = None
         if self.labels is not None:
-            label_seq = self.labels[idx]  # should be list of 0/1 with len = len(text) - 1
+            label_seq = self.labels[idx]
             if len(label_seq) != len(text) - 1:
-                raise ValueError(f"Label length mismatch for index {idx}: text len {len(text)}, labels {len(label_seq)}")
-        else:
-            # For inference mode, no labels
-            label_seq = None
-        
-        # Truncate if too long
+                raise ValueError(
+                    f"Label length mismatch for index {idx}: text len {len(text)}, labels {len(label_seq)}"
+                )
+
         if len(input_ids) > self.max_length:
-            input_ids = input_ids[:self.max_length]
+            input_ids = input_ids[: self.max_length]
             if label_seq is not None:
-                label_seq = label_seq[:self.max_length - 1]
-        
-        # Convert to tensors
+                label_seq = label_seq[: self.max_length - 1]
+
         input_tensor = torch.tensor(input_ids, dtype=torch.long)
-        
+
         if label_seq is not None:
             label_tensor = torch.tensor(label_seq, dtype=torch.long)
             return input_tensor, label_tensor
-        else:
-            return input_tensor, torch.tensor([])  # empty label for inference
 
+        return input_tensor, torch.tensor([])
+
+
+# ======================================================
+# Collate
+# ======================================================
 def collate_fn(batch):
-    """
-    Collate function to pad sequences in a batch
-    """
     inputs, labels = zip(*batch)
-    
-    # Pad inputs
+
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
-    
-    # Pad labels (if any exist)
+
     if labels[0].numel() > 0:
-        # append an ignore token so label length == input length (labels indicate space AFTER each char)
-        new_labels = [torch.cat([l, torch.tensor([-100], dtype=torch.long)]) for l in labels]
-        labels_padded = pad_sequence(new_labels, batch_first=True, padding_value=-100)  # -100 is ignore_index for loss
+        new_labels = [torch.cat([l, torch.tensor([-100])]) for l in labels]
+        labels_padded = pad_sequence(new_labels, batch_first=True, padding_value=-100)
     else:
         labels_padded = None
-    
+
     return inputs_padded, labels_padded
-def create_dataloader(texts, labels=None, char_to_index=None, batch_size=32, max_length=128, shuffle=True, num_workers=0):
-    """
-    Create DataLoader for training or inference
-    
-    Args:
-        texts: List of input texts
-        labels: List of label sequences
-        char_to_index: Dictionary mapping characters to indices
-        batch_size: Batch size
-        max_length: Maximum sequence length
-        shuffle: Whether to shuffle the data
-        num_workers: Number of worker processes
-        
-    Returns:
-        DataLoader instance
-    """
+
+
+def create_dataloader(
+    texts: List[str],
+    labels: Optional[List[List[int]]] = None,
+    char_to_index: Optional[Dict[str, int]] = None,
+    batch_size: int = 32,
+    max_length: int = 128,
+    shuffle: bool = True,
+    num_workers: int = 0,
+):
     dataset = KhmerDataset(texts, labels, char_to_index, max_length)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
     )
-    return dataloader, dataset.char_to_index  # return vocab for potential reuse
+    return dataloader, dataset.char_to_index
 
 
-def load_data(file_path: str,
-              batch_size=None,
-              max_length=128,
-              char_to_index=None,
-              shuffle=True,
-              num_workers=0,
-              skip_invalid=True,
-              return_vocab=False):
+# ======================================================
+# Pair loading helpers
+# ======================================================
+def _strip_all_whitespace(s: str) -> str:
+    return "".join(s.split())
+
+
+def _build_labels_from_segmented_words(words: List[str]) -> Tuple[str, List[int]]:
+    continuous_text = "".join(words)
+
+    label_seq: List[int] = []
+    for w in words[:-1]:
+        label_seq.extend([0] * (len(w) - 1))
+        label_seq.append(1)
+    if words:
+        label_seq.extend([0] * (len(words[-1]) - 1))
+
+    return continuous_text, label_seq
+
+
+# ======================================================
+# Public loader
+# ======================================================
+def load_data(
+    data_dir: str = DEFAULT_DATA_DIR,
+    batch_size: Optional[int] = None,
+    max_length: int = 128,
+    char_to_index: Optional[Dict[str, int]] = None,
+    shuffle: bool = True,
+    num_workers: int = 0,
+    skip_invalid: bool = True,
+    return_vocab: bool = False,
+):
     """
-    Load data from file
-    
-    Expected file format: Each line should contain text and space-separated labels
-    Example: "text_string\t0 1 0 1 0"
-    
-    Args:
-        file_path: Path to data file
-        
-    Returns:
-        Tuple of (texts, labels)
+    Load paired Khmer dataset from folder:
+        *_orig.txt  (no spaces)
+        *_seg.txt   (with spaces)
     """
-    texts = []
-    labels = []
 
-    if os.path.isdir(file_path):
-        txt_files = [os.path.join(file_path, f) for f in os.listdir(file_path) if f.endswith('.txt')]
-    else:
-        matches = glob.glob(file_path)
-        if matches:
-            txt_files = matches
-        elif os.path.isfile(file_path):
-            txt_files = [file_path]
-        else:
-            raise ValueError(f"Invalid path or pattern: {file_path}")
+    if not os.path.isdir(data_dir):
+        raise ValueError(f"data_dir not found: {data_dir}")
+
+    seg_files = sorted(glob.glob(os.path.join(data_dir, "*_seg.txt")))
+    if not seg_files:
+        raise ValueError(f"No *_seg.txt files found in: {data_dir}")
+
+    texts: List[str] = []
+    labels: List[List[int]] = []
 
     skipped = 0
-    total_lines = 0
+    total = 0
 
-    for fp in txt_files:
-        with open(fp, 'r', encoding='utf-8') as f:
-            for line in f:
-                total_lines += 1
-                line = line.strip()
-                if not line:
+    for seg_path in seg_files:
+        orig_path = seg_path.replace("_seg.txt", "_orig.txt")
+        if not os.path.isfile(orig_path):
+            if skip_invalid:
+                skipped += 1
+                continue
+            raise FileNotFoundError(f"Missing paired file: {orig_path}")
+
+        with open(seg_path, "r", encoding="utf-8") as f_seg, open(orig_path, "r", encoding="utf-8") as f_orig:
+            for seg_line, orig_line in zip(f_seg, f_orig):
+                total += 1
+                seg_line = seg_line.strip()
+                orig_line = orig_line.strip()
+
+                if not seg_line or not orig_line:
                     continue
 
-                words = line.split()
-                if not words:
-                    continue
+                words = seg_line.split()
+                cont_text, label_seq = _build_labels_from_segmented_words(words)
 
-                continuous_text = ''.join(words)
-
-                # === CORRECT LABEL CONSTRUCTION ===
-                label_seq = []
-                for word in words[:-1]:
-                    label_seq.extend([0] * (len(word) - 1))
-                    label_seq.append(1)  # space after this word
-                if words:
-                    label_seq.extend([0] * (len(words[-1]) - 1))
-
-                expected_len = len(continuous_text) - 1
-                if len(label_seq) != expected_len:
+                if _strip_all_whitespace(seg_line) != _strip_all_whitespace(orig_line):
                     if skip_invalid:
                         skipped += 1
                         continue
-                    else:
-                        raise ValueError(f"Label length mismatch: {len(label_seq)} vs expected {expected_len}")
+                    raise ValueError("orig/seg mismatch after whitespace removal")
 
-                texts.append(continuous_text)
+                if len(label_seq) != len(cont_text) - 1:
+                    if skip_invalid:
+                        skipped += 1
+                        continue
+                    raise ValueError("Label length mismatch")
+
+                texts.append(cont_text)
                 labels.append(label_seq)
 
     if not texts:
         raise ValueError("No valid data found")
 
     if skipped:
-        print(f"Skipped {skipped} invalid lines out of {total_lines}")
+        print(f"[INFO] Skipped {skipped} invalid lines")
+
+    if char_to_index is None:
+        char_to_index, _ = build_vocab(texts)
 
     if batch_size is not None:
         dataloader, vocab = create_dataloader(
             texts, labels, char_to_index,
-            batch_size=batch_size, max_length=max_length,
-            shuffle=shuffle, num_workers=num_workers
+            batch_size, max_length, shuffle, num_workers
         )
-        if return_vocab:
-            return dataloader, vocab
-        return dataloader
+        return (dataloader, vocab) if return_vocab else dataloader
 
     return texts, labels, char_to_index
