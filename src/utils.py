@@ -25,7 +25,9 @@ def char_to_idx(char: str, char_to_index: dict) -> int:
     Returns:
         Index of the character
     """
-    pass
+    if char not in char_to_index:
+        raise ValueError(f"Character '{char}' not found in char_to_index dictionary")
+    return char_to_index[char]
 
 
 # TODO: Lyhourt
@@ -40,7 +42,9 @@ def idx_to_char(idx: int, index_to_char: dict) -> str:
     Returns:
         Character at the index
     """
-    pass
+    if idx not in index_to_char:
+        raise ValueError(f"Index '{idx}' not found in index_to_char dictionary")
+    return index_to_char[idx]
 
 # TODO: HengHeng
 def build_vocab(texts):
