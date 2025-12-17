@@ -91,7 +91,7 @@ def save_model(model, path: str) -> None:
         model: PyTorch model to save
         path: Path to save the model
     """
-    pass
+    torch.save(model.state_dict(), path)
 
 
 # TODO: SOL Visal
@@ -104,4 +104,7 @@ def load_model(model, path: str, device: str = 'cpu') -> None:
         path: Path to load the model from
         device: Device to load the model on ('cpu' or 'cuda')
     """
-    pass
+    state_dict = torch.load(path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
