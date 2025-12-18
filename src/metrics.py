@@ -4,7 +4,7 @@ Metrics for Khmer space injection (word segmentation)
 from typing import Tuple, Union
 import torch
 
-# TODO: PEN Virak
+
 def space_precision_recall_f1(
     y_true: Union[torch.Tensor, list],
     y_pred: Union[torch.Tensor, list],
@@ -49,7 +49,6 @@ def space_precision_recall_f1(
     return float(precision), float(recall), float(f1)
 
 
-# TODO: PEN Virak
 def exact_match_rate(seg_true: str, seg_pred: str) -> float:
     """
     Exact match rate at sentence level.

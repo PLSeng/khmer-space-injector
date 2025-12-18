@@ -1,6 +1,9 @@
 program: main.py
 method: bayes
 
+entity: limseng2017-institute-of-technology-of-cambodia
+project: khmer-space-injector
+
 metric:
   name: train/best_loss
   goal: minimize
@@ -24,22 +27,16 @@ command:
   - cuda
 
 parameters:
-  # =========================
-  # Optimizer
-  # =========================
   optimizer:
     values: [adamw, adam, sgd]
 
   lr:
     distribution: log_uniform_values
-    min: 1e-4      # works for Adam*
-    max: 1e-1      # needed for SGD
+    min: 1e-4
+    max: 3e-2
 
   momentum:
     values: [0.8, 0.9, 0.95]
-
-  nesterov:
-    values: [true, false]
 
   weight_decay:
     values: [0.0, 1e-4, 1e-2]
@@ -47,9 +44,6 @@ parameters:
   grad_clip:
     values: [0.0, 1.0, 5.0]
 
-  # =========================
-  # Model architecture
-  # =========================
   rnn_type:
     values: [lstm, gru]
 
@@ -71,17 +65,11 @@ parameters:
   residual:
     value: true
 
-  # =========================
-  # Sequence handling
-  # =========================
   max_length:
-    values: [24, 32, 64, 128]
+    values: [64, 128]
 
   batch_size:
-    values: [4, 8, 12, 16, 32]
+    values: [4, 8, 16, 32]
 
-  # =========================
-  # Fixed
-  # =========================
   epochs:
     value: 8

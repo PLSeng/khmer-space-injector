@@ -116,7 +116,7 @@ def train(args):
 
     # Load training data (segmented dataset)
     train_loader, vocab = load_data(
-        file_path=args.train_path,
+        data_dir=args.train_path,
         batch_size=args.batch_size,
         max_length=args.max_length,
         char_to_index=None,
@@ -125,6 +125,7 @@ def train(args):
         skip_invalid=True,
         return_vocab=True,
     )
+
 
     if args.vocab_path:
         _save_vocab(vocab, args.vocab_path)
