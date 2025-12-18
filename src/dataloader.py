@@ -81,13 +81,27 @@ def collate_fn(batch):
 
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
 
-    if labels[0].numel() > 0:
-        new_labels = [torch.cat([l, torch.tensor([-100])]) for l in labels]
+    # If ANY sample has real labels, treat this as training mode.
+    has_labels = any(l.numel() > 0 for l in labels)
+
+    if has_labels:
+        # Ensure every sample has a label tensor of length (len(x)-1)
+        fixed_labels = []
+        for x, l in zip(inputs, labels):
+            if l.numel() == 0:
+                # create "ignore" labels so shapes align and loss ignores them
+                fixed_labels.append(torch.full((max(len(x) - 1, 0),), -100, dtype=torch.long))
+            else:
+                fixed_labels.append(l.to(dtype=torch.long))
+
+        # append ignore token so label length can match padded input length
+        new_labels = [torch.cat([l, torch.tensor([-100], dtype=torch.long)]) for l in fixed_labels]
         labels_padded = pad_sequence(new_labels, batch_first=True, padding_value=-100)
     else:
-        labels_padded = None
+        labels_padded = torch.empty((len(inputs), 0), dtype=torch.long)
 
     return inputs_padded, labels_padded
+
 
 
 def create_dataloader(
