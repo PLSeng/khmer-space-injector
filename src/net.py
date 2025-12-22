@@ -6,11 +6,7 @@ import torch
 import torch.nn as nn
 import random
 
-
 class CRF(nn.Module):
-    """
-    Conditional Random Field (CRF) layer for sequence labeling
-    """
     def __init__(self, num_tags):
         super().__init__()
         self.num_tags = num_tags
@@ -46,111 +42,155 @@ class CRF(nn.Module):
 
         return torch.logsumexp(alpha + self.end_transitions, dim=1)
 
+class RNN(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        self.Wxh = nn.Linear(input_dim, hidden_dim)
+        self.Whh = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
+    def forward(self, x_t, h_prev):
+        return torch.tanh(self.Wxh(x_t) + self.Whh(h_prev))
+    
+class GRU(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        self.z = nn.Linear(input_dim + hidden_dim, hidden_dim)
+        self.r = nn.Linear(input_dim + hidden_dim, hidden_dim)
+        self.h = nn.Linear(input_dim + hidden_dim, hidden_dim)
+
+    def forward(self, x_t, h_prev):
+        concat = torch.cat([x_t, h_prev], dim=-1)
+        z_t = torch.sigmoid(self.z(concat))
+        r_t = torch.sigmoid(self.r(concat))
+
+        concat_reset = torch.cat([x_t, r_t * h_prev], dim=-1)
+        h_tilde = torch.tanh(self.h(concat_reset))
+
+        return (1 - z_t) * h_prev + z_t * h_tilde
+    
+class LSTM(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        self.i = nn.Linear(input_dim + hidden_dim, hidden_dim)
+        self.f = nn.Linear(input_dim + hidden_dim, hidden_dim)
+        self.o = nn.Linear(input_dim + hidden_dim, hidden_dim)
+        self.g = nn.Linear(input_dim + hidden_dim, hidden_dim)
+
+    def forward(self, x_t, state):
+        h_prev, c_prev = state
+        concat = torch.cat([x_t, h_prev], dim=-1)
+
+        i_t = torch.sigmoid(self.i(concat))
+        f_t = torch.sigmoid(self.f(concat))
+        o_t = torch.sigmoid(self.o(concat))
+        g_t = torch.tanh(self.g(concat))
+
+        c_t = f_t * c_prev + i_t * g_t
+        h_t = o_t * torch.tanh(c_t)
+        return h_t, c_t
+
+class BiRecurrentLayer(nn.Module):
+    def __init__(self, cell_cls, input_dim, hidden_dim, bidirectional=True):
+        super().__init__()
+        self.bidirectional = bidirectional
+        self.fw = cell_cls(input_dim, hidden_dim)
+        if bidirectional:
+            self.bw = cell_cls(input_dim, hidden_dim)
+
+    def forward(self, x):
+        B, T, _ = x.shape
+        device = x.device
+        hidden_dim = self.fw.Wxh.out_features if hasattr(self.fw, "Wxh") else self.fw.i.out_features
+
+        # Forward pass
+        h_fw = []
+        h = torch.zeros(B, hidden_dim, device=device)
+        c = torch.zeros_like(h) if isinstance(self.fw, LSTM) else None
+
+        for t in range(T):
+            if c is not None:
+                h, c = self.fw(x[:, t], (h, c))
+            else:
+                h = self.fw(x[:, t], h)
+            h_fw.append(h)
+        h_fw = torch.stack(h_fw, dim=1)
+
+        if not self.bidirectional:
+            return h_fw
+
+        # Backward pass
+        h_bw = []
+        h = torch.zeros_like(h_fw[:, 0])
+        c = torch.zeros_like(h) if isinstance(self.bw, LSTM) else None
+
+        for t in reversed(range(T)):
+            if c is not None:
+                h, c = self.bw(x[:, t], (h, c))
+            else:
+                h = self.bw(x[:, t], h)
+            h_bw.append(h)
+
+        h_bw.reverse()
+        h_bw = torch.stack(h_bw, dim=1)
+
+        return torch.cat([h_fw, h_bw], dim=-1)
+    
 class KhmerRNN(nn.Module):
-    """
-    RNN model for Khmer space injection
-    """
-
     def __init__(
         self,
-        vocab_size: int,
-        embedding_dim: int = 128,
-        hidden_dim: int | list = 256,
-        num_layers: int = 2,
-        dropout: float = 0.3,
-        bidirectional: bool = True,
-        rnn_type: str = "lstm",
-        residual: bool = True,
-        use_crf: bool = True,
+        vocab_size,
+        embedding_dim=128,
+        hidden_dim=256,
+        num_layers=2,
+        dropout=0.3,
+        bidirectional=True,
+        rnn_type="lstm",
+        residual=True,
+        use_crf=True,
     ):
-        """
-        Initialize RNN model
-
-        Args:
-            vocab_size: Size of vocabulary
-            embedding_dim: Dimension of character embeddings
-            hidden_dim: Dimension of hidden states (int or list per layer)
-            num_layers: Number of RNN layers
-            dropout: Dropout probability
-            bidirectional: Whether to use bidirectional RNN
-        """
         super().__init__()
 
-        if isinstance(hidden_dim, int):
-            self.hidden_dims = [hidden_dim] * num_layers
-        else:
-            self.hidden_dims = hidden_dim
-            num_layers = len(hidden_dim)
-
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1
-        self.dropout = dropout
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.dropout = nn.Dropout(dropout)
         self.residual = residual
         self.use_crf = use_crf
-        self.rnn_type = rnn_type.lower()
 
-        self.embedding = nn.Embedding(
-            vocab_size,
-            embedding_dim,
-            padding_idx=0
-        )
+        cell_map = {
+            "rnn": RNN,
+            "gru": GRU,
+            "lstm": LSTM,
+        }
+        cell_cls = cell_map[rnn_type.lower()]
 
-        self.rnn_layers = nn.ModuleList()
+        self.layers = nn.ModuleList()
+        input_dim = embedding_dim
 
-        for i in range(num_layers):
-            input_dim = (
-                embedding_dim
-                if i == 0
-                else self.hidden_dims[i - 1] * self.num_directions
+        for _ in range(num_layers):
+            layer = BiRecurrentLayer(
+                cell_cls=cell_cls,
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                bidirectional=bidirectional,
             )
+            self.layers.append(layer)
+            input_dim = hidden_dim * (2 if bidirectional else 1)
 
-            rnn_cls = {
-                "rnn": nn.RNN,
-                "gru": nn.GRU,
-                "lstm": nn.LSTM
-            }[self.rnn_type]
+        self.fc = nn.Linear(input_dim, 2)
 
-            self.rnn_layers.append(
-                rnn_cls(
-                    input_size=input_dim,
-                    hidden_size=self.hidden_dims[i],
-                    batch_first=True,
-                    bidirectional=bidirectional
-                )
-            )
-
-        self.dropout_layer = nn.Dropout(dropout)
-
-        final_dim = self.hidden_dims[-1] * self.num_directions
-        self.fc = nn.Linear(final_dim, 2)
-
-        if self.use_crf:
+        if use_crf:
             self.crf = CRF(num_tags=2)
 
     def forward(self, x, tags=None, mask=None):
-        """
-        Forward pass
-
-        Args:
-            x: Input tensor of shape (batch_size, sequence_length)
-            tags: Gold labels (optional, required for CRF training)
-            mask: Padding mask (optional)
-
-        Returns:
-            Emission scores or CRF loss
-        """
         out = self.embedding(x)
 
-        for rnn in self.rnn_layers:
+        for layer in self.layers:
             residual = out
-            out, _ = rnn(out)
+            out = layer(out)
 
-            if self.residual and residual.shape == out.shape:
+            if self.residual and out.shape == residual.shape:
                 out = out + residual
 
-            out = self.dropout_layer(out)
+            out = self.dropout(out)
 
         emissions = self.fc(out)
 
