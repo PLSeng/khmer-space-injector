@@ -10,11 +10,8 @@ metric:
 
 command:
   - ${env}
-  - conda
-  - run
-  - -n
-  - khmer-space-injector
   - python
+  - -u
   - ${program}
   - --mode
   - train
