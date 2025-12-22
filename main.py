@@ -5,13 +5,27 @@ Main entry point for Khmer space injection RNN training and inference
 import argparse
 import json
 import os
+import time
+from datetime import datetime
 from typing import Optional
 
 import torch
 import torch.nn as nn
+from tqdm.auto import tqdm
 
 from src.net import KhmerRNN
 from src.dataloader import load_data
+
+
+# ======================================================
+# Logging helpers
+# ======================================================
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _log(msg: str) -> None:
+    print(f"[{_now()}] {msg}")
 
 
 # ======================================================
@@ -23,7 +37,7 @@ def _maybe_init_wandb(args) -> Optional[object]:
     try:
         import wandb  # type: ignore
     except Exception:
-        print("[WARN] wandb not available. Continuing without wandb logging.")
+        _log("[WARN] wandb not available. Continuing without wandb logging.")
         return None
 
     wandb.init(
@@ -101,7 +115,6 @@ def _make_optimizer(args, model: nn.Module):
 
 
 def _make_criterion(args):
-    # keep loss simple/standard for now
     if args.loss.lower() == "ce":
         return nn.CrossEntropyLoss(ignore_index=-100)
     raise ValueError(f"Unknown loss: {args.loss}")
@@ -114,7 +127,7 @@ def train(args):
     device = _select_device(args.device)
     wandb = _maybe_init_wandb(args)
 
-    # Load training data (segmented dataset)
+    _log("Loading training data...")
     train_loader, vocab = load_data(
         data_dir=args.train_path,
         batch_size=args.batch_size,
@@ -126,10 +139,23 @@ def train(args):
         return_vocab=True,
     )
 
+    # config logs
+    _log("=== Training config ===")
+    _log(f"device={device} | epochs={args.epochs} | batch_size={args.batch_size} | lr={args.lr}")
+    _log(f"optimizer={args.optimizer} | weight_decay={args.weight_decay} | loss={args.loss} | grad_clip={args.grad_clip}")
+    _log(f"max_length={args.max_length} | num_workers={args.num_workers}")
+    _log(f"model: rnn_type={args.rnn_type} | emb={args.embedding_dim} | hid={args.hidden_dim} | layers={args.num_layers}")
+    _log(f"dropout={args.dropout} | bidirectional={args.bidirectional} | residual={args.residual}")
+    _log(f"vocab_size={len(vocab)}")
+
+    try:
+        _log(f"train_batches_per_epoch={len(train_loader)}")
+    except Exception:
+        _log("train_batches_per_epoch=unknown (DataLoader has no __len__)")
 
     if args.vocab_path:
         _save_vocab(vocab, args.vocab_path)
-        print(f"[Saved vocab] {args.vocab_path}")
+        _log(f"[Saved vocab] {args.vocab_path}")
 
     model = KhmerRNN(
         vocab_size=len(vocab),
@@ -143,19 +169,33 @@ def train(args):
         use_crf=False,
     ).to(device)
 
+    # parameter count log
+    try:
+        n_params = sum(p.numel() for p in model.parameters())
+        n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        _log(f"model_params_total={n_params:,} | trainable={n_train:,}")
+    except Exception:
+        pass
+
     criterion = _make_criterion(args)
     optimizer = _make_optimizer(args, model)
 
     best_loss = float("inf")
     global_step = 0
+    total_start = time.time()
 
     for epoch in range(1, args.epochs + 1):
         model.train()
         running_loss = 0.0
         running_acc = 0.0
         n = 0
+        epoch_start = time.time()
 
-        for x, y in train_loader:
+        epoch_iter = train_loader
+        if args.tqdm:
+            epoch_iter = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}", leave=False)
+
+        for step, (x, y) in enumerate(epoch_iter, start=1):
             x = x.to(device)
             y = y.to(device)
 
@@ -177,6 +217,18 @@ def train(args):
             n += 1
             global_step += 1
 
+            # tqdm live metrics
+            if args.tqdm:
+                epoch_iter.set_postfix(loss=f"{loss.item():.4f}", acc=f"{acc:.4f}")
+
+            # periodic print logs (avoid spamming)
+            if args.log_every and args.log_every > 0 and (step % args.log_every == 0):
+                try:
+                    total_steps = len(train_loader)
+                    _log(f"epoch={epoch} step={step}/{total_steps} loss={loss.item():.4f} token_acc={acc:.4f}")
+                except Exception:
+                    _log(f"epoch={epoch} step={step} loss={loss.item():.4f} token_acc={acc:.4f}")
+
             if wandb is not None:
                 wandb.log(
                     {
@@ -190,13 +242,14 @@ def train(args):
 
         epoch_loss = running_loss / max(1, n)
         epoch_acc = running_acc / max(1, n)
-        print(f"[Epoch {epoch}/{args.epochs}] loss={epoch_loss:.4f} token_acc={epoch_acc:.4f}")
+        elapsed = time.time() - epoch_start
+        _log(f"[Epoch {epoch}/{args.epochs}] loss={epoch_loss:.4f} token_acc={epoch_acc:.4f} time={elapsed:.1f}s")
 
         if epoch_loss < best_loss:
             best_loss = epoch_loss
             if args.ckpt_path:
                 _save_checkpoint(model, args.ckpt_path)
-                print(f"[Saved] {args.ckpt_path} (best_loss={best_loss:.4f})")
+                _log(f"[Saved] {args.ckpt_path} (best_loss={best_loss:.4f})")
 
         if wandb is not None:
             wandb.log(
@@ -207,6 +260,8 @@ def train(args):
                 },
                 step=global_step,
             )
+
+    _log(f"Training done. Total time={(time.time() - total_start) / 60:.1f} min")
 
     if wandb is not None:
         wandb.finish()
@@ -228,6 +283,7 @@ def inference(args):
     if not text:
         raise ValueError("Provide input text with --text")
 
+    _log("Loading vocab + checkpoint...")
     vocab = _load_vocab(args.vocab_path)
 
     model = KhmerRNN(
@@ -250,6 +306,7 @@ def inference(args):
     ids = [vocab.get(ch, unk) for ch in text]
 
     if len(ids) > args.max_length:
+        _log(f"[WARN] input_len={len(ids)} > max_length={args.max_length}. Truncating.")
         ids = ids[: args.max_length]
         text = text[: args.max_length]
 
@@ -297,10 +354,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--num_workers", type=int, default=0)
     p.add_argument("--max_length", type=int, default=128)
 
+    # logging
+    p.add_argument("--log_every", type=int, default=50, help="Print a log line every N steps (0 disables).")
+    p.add_argument("--tqdm", action="store_true", default=True, help="Enable tqdm progress bars.")
+
     # optimizer/loss tuning
     p.add_argument("--optimizer", type=str, default="adamw", choices=["adamw", "adam", "sgd"])
     p.add_argument("--loss", type=str, default="ce", choices=["ce"])
-    p.add_argument("--momentum", type=float, default=0.9)      # for SGD
+    p.add_argument("--momentum", type=float, default=0.9)  # for SGD
     p.add_argument("--nesterov", action="store_true", default=False)  # for SGD
 
     # model hparams

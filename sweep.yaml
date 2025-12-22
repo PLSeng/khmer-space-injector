@@ -45,7 +45,7 @@ parameters:
     values: [0.0, 1.0, 5.0]
 
   rnn_type:
-    values: [lstm, gru]
+    values: [rnn, lstm, gru]
 
   hidden_dim:
     values: [32, 64, 128, 256]
@@ -60,10 +60,10 @@ parameters:
     values: [0.1, 0.3, 0.5]
 
   bidirectional:
-    value: true
+    values: [true, false]
 
   residual:
-    value: true
+    values: [true, false]
 
   max_length:
     values: [64, 128]
