@@ -22,6 +22,7 @@ command:
   - data
   - --device
   - cuda
+  - ${args}
 
 parameters:
   optimizer:
@@ -57,10 +58,10 @@ parameters:
     values: [0.1, 0.3, 0.5]
 
   bidirectional:
-    values: [true, false]
+    values: [True, False]
 
   residual:
-    values: [true, false]
+    values: [True, False]
 
   max_length:
     values: [64, 128]

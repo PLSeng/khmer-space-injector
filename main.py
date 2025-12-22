@@ -3,6 +3,7 @@ Main entry point for Khmer space injection RNN training and inference
 """
 
 import argparse
+from argparse import BooleanOptionalAction
 import json
 import os
 import time
@@ -15,6 +16,7 @@ from tqdm.auto import tqdm
 
 from src.net import KhmerRNN
 from src.dataloader import load_data
+from src.utils import str2bool
 
 
 # ======================================================
@@ -369,8 +371,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--hidden_dim", type=int, default=256)
     p.add_argument("--num_layers", type=int, default=2)
     p.add_argument("--dropout", type=float, default=0.3)
-    p.add_argument("--bidirectional", action="store_true", default=True)
-    p.add_argument("--residual", action="store_true", default=True)
+    p.add_argument("--bidirectional", type=str2bool, default=True)
+    p.add_argument("--residual", type=str2bool, default=True)
     p.add_argument("--rnn_type", type=str, default="lstm", choices=["rnn", "gru", "lstm"])
 
     # system

@@ -1,6 +1,7 @@
 """
 Utility functions for Khmer space injection RNN model
 """
+import argparse
 import random
 import numpy as np
 import torch
@@ -101,3 +102,17 @@ def load_model(model, path: str, device: str = 'cpu') -> None:
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
+
+
+def str2bool(v):
+    # accepts True/False from wandb like "--flag=True"
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    if s in ("1", "true", "t", "yes", "y", "on"):
+        return True
+    if s in ("0", "false", "f", "no", "n", "off"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean expected, got: {v}")
