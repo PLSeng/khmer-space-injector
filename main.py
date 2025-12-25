@@ -28,6 +28,19 @@ def _now() -> str:
 
 def _log(msg: str) -> None:
     print(f"[{_now()}] {msg}")
+    
+def _chunk_text(text: str, max_length: int):
+    return [text[i:i + max_length] for i in range(0, len(text), max_length)]
+
+def _read_text_file(path: str) -> str:
+    if not path:
+        return ""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Text file not found: {path}")
+    if not path.lower().endswith(".txt"):
+        raise ValueError("Inference input must be a .txt file (e.g., --text_path input.txt)")
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 # ======================================================
@@ -86,13 +99,38 @@ def _compute_token_accuracy(logits: torch.Tensor, targets: torch.Tensor, ignore_
 def _decode_spaces(text: str, pred_labels: list[int]) -> str:
     """
     label=1 means insert a space AFTER this character
+    Block spaces before Khmer combining marks (vowels/diacritics/subscript signs),
+    so we don't split grapheme clusters like "ព្រេង" -> "ព្រ េង".
     """
+    # Khmer combining / dependent signs (not exhaustive, but strong coverage)
+    khmer_combining = set(
+        [
+            "្",  # coeng (subscript marker)
+            "់", "ៈ", "៎", "៏", "័", "៌", "៍", "៑", "៓", "៕", "។", "៘",
+            "ា","ិ","ី","ឹ","ឺ","ុ","ូ","ួ","ើ","ឿ","ៀ","េ","ែ","ៃ","ោ","ៅ",
+            "ំ","ះ",
+        ]
+    )
+
     out = []
-    for ch, yhat in zip(text, pred_labels):
+    n = min(len(text), len(pred_labels))
+
+    for i in range(n):
+        ch = text[i]
         out.append(ch)
-        if yhat == 1:
-            out.append(" ")
+
+        yhat = pred_labels[i]
+        if yhat != 1:
+            continue
+
+        # If next codepoint is a combining/dependent mark, DO NOT add space here
+        if i + 1 < n and text[i + 1] in khmer_combining:
+            continue
+
+        out.append(" ")
+
     return "".join(out).strip()
+
 
 
 def _make_optimizer(args, model: nn.Module):
@@ -281,9 +319,10 @@ def inference(args):
             f"Vocab not found: {args.vocab_path}. Train first (it saves vocab), or provide --vocab_path."
         )
 
-    text = (args.text or "").strip()
+    text = _read_text_file(args.text_path)
+    text = text.strip()
     if not text:
-        raise ValueError("Provide input text with --text")
+        raise ValueError("Provide a non-empty .txt file with --text_path")
 
     _log("Loading vocab + checkpoint...")
     vocab = _load_vocab(args.vocab_path)
@@ -305,21 +344,31 @@ def inference(args):
     model.eval()
 
     unk = vocab.get("<UNK>", 1)
-    ids = [vocab.get(ch, unk) for ch in text]
 
-    if len(ids) > args.max_length:
-        _log(f"[WARN] input_len={len(ids)} > max_length={args.max_length}. Truncating.")
-        ids = ids[: args.max_length]
-        text = text[: args.max_length]
+    chunks = _chunk_text(text, args.max_length)
+    _log(f"Inference on {len(chunks)} chunks (max_length={args.max_length})")
 
-    x = torch.tensor(ids, dtype=torch.long).unsqueeze(0).to(device)
+    all_outputs = []
+    for i, chunk in enumerate(chunks, start=1):
+        ids = [vocab.get(ch, unk) for ch in chunk]
+        x = torch.tensor(ids, dtype=torch.long).unsqueeze(0).to(device)
 
-    with torch.no_grad():
-        logits = model(x)
-        pred = logits.argmax(dim=-1).squeeze(0).tolist()
+        with torch.no_grad():
+            logits = model(x)
+            pred = logits.argmax(dim=-1).squeeze(0).tolist()
 
-    segmented = _decode_spaces(text, pred)
-    print(segmented)
+        all_outputs.append(_decode_spaces(chunk, pred))
+
+    segmented = "".join(all_outputs)
+
+    # write output to file
+    out_path = args.output_path or "inference_output.txt"
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(segmented)
+
+    _log(f"[Saved inference output] {out_path}")
+    _log(f"input_chars={len(text)} | output_chars={len(segmented)}")
 
     if wandb is not None:
         wandb.log({"infer/input_len": len(text), "infer/output_len": len(segmented)})
@@ -338,10 +387,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--train_path",
         type=str,
-        default="data",  # folder or file/glob depending on your dataloader
+        default="data",
         help="Path to training data (folder, file, or glob).",
     )
-    p.add_argument("--text", type=str, default=None, help="Input Khmer text (no spaces) for inference.")
+
+    p.add_argument(
+        "--text_path",
+        type=str,
+        default=None,
+        help="Path to input .txt file for inference (Khmer text, typically no spaces).",
+    )
+    p.add_argument("--output_path", type=str, default="inference_output.txt", help="Path to save inference output (.txt).")
+
 
     # checkpoint + vocab
     p.add_argument("--ckpt_path", type=str, default="checkpoints/khmer_rnn.pt")
@@ -363,10 +420,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # optimizer/loss tuning
     p.add_argument("--optimizer", type=str, default="adamw", choices=["adamw", "adam", "sgd"])
     p.add_argument("--loss", type=str, default="ce", choices=["ce"])
-    p.add_argument("--momentum", type=float, default=0.9)  # for SGD
-    p.add_argument("--nesterov", action="store_true", default=False)  # for SGD
+    p.add_argument("--momentum", type=float, default=0.9)
+    p.add_argument("--nesterov", action="store_true", default=False)
 
-    # model hparams
+    # model hparams  (DO NOT change str2bool usage)
     p.add_argument("--embedding_dim", type=int, default=128)
     p.add_argument("--hidden_dim", type=int, default=256)
     p.add_argument("--num_layers", type=int, default=2)
