@@ -92,7 +92,9 @@ class LSTM(nn.Module):
 class BiRecurrentLayer(nn.Module):
     def __init__(self, cell_cls, input_dim, hidden_dim, bidirectional=True):
         super().__init__()
+        self.hidden_dim = hidden_dim
         self.bidirectional = bidirectional
+
         self.fw = cell_cls(input_dim, hidden_dim)
         if bidirectional:
             self.bw = cell_cls(input_dim, hidden_dim)
@@ -100,11 +102,11 @@ class BiRecurrentLayer(nn.Module):
     def forward(self, x):
         B, T, _ = x.shape
         device = x.device
-        hidden_dim = self.fw.Wxh.out_features if hasattr(self.fw, "Wxh") else self.fw.i.out_features
+        H = self.hidden_dim
 
-        # Forward pass
+        # ---------- Forward ----------
         h_fw = []
-        h = torch.zeros(B, hidden_dim, device=device)
+        h = torch.zeros(B, H, device=device)
         c = torch.zeros_like(h) if isinstance(self.fw, LSTM) else None
 
         for t in range(T):
@@ -113,14 +115,15 @@ class BiRecurrentLayer(nn.Module):
             else:
                 h = self.fw(x[:, t], h)
             h_fw.append(h)
+
         h_fw = torch.stack(h_fw, dim=1)
 
         if not self.bidirectional:
             return h_fw
 
-        # Backward pass
+        # ---------- Backward ----------
         h_bw = []
-        h = torch.zeros_like(h_fw[:, 0])
+        h = torch.zeros(B, H, device=device)
         c = torch.zeros_like(h) if isinstance(self.bw, LSTM) else None
 
         for t in reversed(range(T)):
