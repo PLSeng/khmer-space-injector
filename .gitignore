@@ -209,7 +209,8 @@ __marimo__/
 
 # data
 data
-checkpoints
+checkpoints/retrain_best_model3.pt
+checkpoints/retrain_history_model3.json
 
 # training checkpoints
 wandb/
