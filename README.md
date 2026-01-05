@@ -1,4 +1,6 @@
 # khmer-space-injector
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 Khmer word segmentation with RNN
 
 ## Project Structure
